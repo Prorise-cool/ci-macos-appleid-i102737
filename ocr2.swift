@@ -26,11 +26,11 @@ func cc(_ img: CIImage, sat: CGFloat, contrast: CGFloat, bright: CGFloat) -> CII
 }
 var variants: [(String, CIImage)] = [("orig", src)]
 for c in [1.6, 2.4, 3.5, 5.0] as [CGFloat] {
-    let g = cc(src, 0.0, c, 0.02)
+    let g = cc(src, sat: 0.0, contrast: c, bright: 0.02)
     variants.append(("g\(c)", g))
     variants.append(("gi\(c)", CIFilter(name: "CIColorInvert", parameters: [kCIInputImageKey: g])!.outputImage!))
 }
-let s0 = CIFilter(name: "CISharpenLuminance", parameters: [kCIInputImageKey: cc(src, 0.0, 2.4, 0.02), kCIInputSharpnessKey: 1.2])!.outputImage!
+let s0 = CIFilter(name: "CISharpenLuminance", parameters: [kCIInputImageKey: cc(src, sat: 0.0, contrast: 2.4, bright: 0.02), kCIInputSharpnessKey: 1.2])!.outputImage!
 variants.append(("sharp", s0))
 variants.append(("sharpi", CIFilter(name: "CIColorInvert", parameters: [kCIInputImageKey: s0])!.outputImage!))
 
