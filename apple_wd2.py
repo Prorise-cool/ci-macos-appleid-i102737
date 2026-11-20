@@ -31,7 +31,11 @@ def mailtm_new():
         STATE['email'] = {'addr': addr, 'pw': pw, 'token': json.loads(b2).get('token')}; ev('mailtm', {'addr': addr, 'token': bool(STATE['email']['token'])})
     except Exception as e: ev('mailtm_err', repr(e)[:300])
 
-NUMBER = os.environ.get('APPLE_PHONE', '+12835237397')
+def norm_phone(s):
+    d = re.sub(r'\D', '', s or '')
+    if len(d) == 11 and d.startswith('1'): d = d[1:]
+    return d
+NUMBER = norm_phone(os.environ.get('APPLE_PHONE', '2833523739'))
 
 WD = 'http://127.0.0.1:4444'; SID = None
 def wd(method, path, data=None, timeout=120):
@@ -176,6 +180,14 @@ def main():
         time.sleep(9)
         t = dump('3%d_after_submit_%d' % (attempt, attempt))
         low = t.lower()
+        if 'enter a valid phone number' in low or 'phone error' in low:
+            v = js("""var e=document.querySelector('input[name=phoneNumber]'); if(!e) return null;
+              var s=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;
+              s.call(e, arguments[0]); e.dispatchEvent(new Event('input',{bubbles:true})); return e.value;""", [NUMBER])
+            ev('phone_refixed', v)
+            if attempt < 3:
+                click_new_code(); time.sleep(4)
+                continue
         if 'security challenge error' in low or 'incorrect' in low or 'try again' in low or "didn't match" in low:
             ev('captcha_wrong', attempt)
             if attempt < 3:
