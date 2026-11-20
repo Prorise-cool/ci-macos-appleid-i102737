@@ -1,13 +1,12 @@
 name: macos-appleid-safari
 on:
   workflow_dispatch:
-  push:
-    branches: [master]
 jobs:
   safari:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
+      - uses: actions/checkout@v4
       - name: env probe
         run: |
           sw_vers; uname -m; sysctl -n hw.model || true
@@ -26,8 +25,8 @@ jobs:
           echo "$RUNNER_TEMP" > /tmp/rt_path
       - name: attempt apple account creation in real Safari
         run: |
-          cd "$GITHUB_WORKSPACE"
-          python3 apple_wd.py 2>&1 | tail -200 || true
+          cd "$GITHUB_WORKSPACE"; ls -la
+          python3 apple_wd.py 2>&1 | tail -300 || true
       - name: messages state
         if: always()
         run: |
