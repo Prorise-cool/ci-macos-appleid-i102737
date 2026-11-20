@@ -1,0 +1,42 @@
+name: apple-headful
+on:
+  workflow_dispatch:
+jobs:
+  apple:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: env-probe
+        run: |
+          echo "== whoami =="; whoami; id -Gn
+          echo "== gui =="; launchctl managername; ls -l /dev/console
+          echo "== chrome =="; ls -d "/Applications/Google Chrome.app" 2>&1; "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version 2>&1 | head -2
+          echo "== edge =="; ls -d "/Applications/Microsoft Edge.app" 2>&1
+          echo "== python =="; python3 -V; which python3
+          echo "== sudo =="; sudo -n true 2>&1 && echo sudo-ok || echo sudo-no
+          echo "== ip =="; curl -sS --max-time 15 https://api.ipify.org; echo
+          echo "== messages accounts =="; defaults read com.apple.iChat 2>&1 | head -20
+          echo "== ids prefs =="; /usr/libexec/PlistBuddy -c 'Print' ~/Library/Preferences/com.apple.ids.service.plist 2>&1 | head -10
+      - name: deps
+        run: |
+          python3 -m pip install --disable-pip-version-check -q playwright || python3 -m pip install --disable-pip-version-check -q --user playwright
+      - name: attempt
+        timeout-minutes: 20
+        run: |
+          python3 apple_try.py 2>&1 | tee attempt.log || true
+      - name: messages-state
+        if: always()
+        run: |
+          echo "== agents =="; pgrep -lf imagent || true
+          echo "== chatdb =="; sqlite3 "$HOME/Library/Messages/chat.db" ".tables" 2>&1 | head -5
+          echo "== chat count =="; sqlite3 "$HOME/Library/Messages/chat.db" "select count(*) from chat;" 2>&1
+          echo "== ichat prefs =="; defaults read com.apple.iChat 2>&1 | head -30
+          echo "== ids =="; /usr/libexec/PlistBuddy -c 'Print' ~/Library/Preferences/com.apple.ids.service.plist 2>&1 | head -20
+      - name: upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-evidence
+          path: out
+          if-no-files-found: warn
