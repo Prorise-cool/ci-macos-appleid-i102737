@@ -1,42 +1,46 @@
-name: apple-headful
+name: macos-appleid-safari
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
 jobs:
-  apple:
+  safari:
     runs-on: macos-15
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - name: env-probe
+      - name: env probe
         run: |
-          echo "== whoami =="; whoami; id -Gn
-          echo "== gui =="; launchctl managername; ls -l /dev/console
-          echo "== chrome =="; ls -d "/Applications/Google Chrome.app" 2>&1; "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version 2>&1 | head -2
-          echo "== edge =="; ls -d "/Applications/Microsoft Edge.app" 2>&1
-          echo "== python =="; python3 -V; which python3
-          echo "== sudo =="; sudo -n true 2>&1 && echo sudo-ok || echo sudo-no
-          echo "== ip =="; curl -sS --max-time 15 https://api.ipify.org; echo
-          echo "== messages accounts =="; defaults read com.apple.iChat 2>&1 | head -20
-          echo "== ids prefs =="; /usr/libexec/PlistBuddy -c 'Print' ~/Library/Preferences/com.apple.ids.service.plist 2>&1 | head -10
-      - name: deps
+          sw_vers; uname -m; sysctl -n hw.model || true
+          launchctl managername || true; whoami; id
+          ls -l /opt/homebrew/bin/python3* /usr/bin/python3 2>/dev/null || true
+          python3 -V; safaridriver --version || true
+          ls /Applications | head -30
+      - name: enable and start safaridriver (headful GUI session)
         run: |
-          python3 -m pip install --disable-pip-version-check -q playwright || python3 -m pip install --disable-pip-version-check -q --user playwright
-      - name: attempt
-        timeout-minutes: 20
+          sudo -n safaridriver --enable || echo "ENABLE_FAILED"
+          defaults write com.apple.Safari AllowJavaScriptFromAppleEvents -bool true || true
+          defaults write com.apple.Safari IncludeDevelopMenu -bool true || true
+          nohup safaridriver --port 4444 > "$RUNNER_TEMP/safaridriver.log" 2>&1 &
+          sleep 3
+          curl -s -m 8 http://127.0.0.1:4444/status || echo "STATUS_FAILED"
+          echo "$RUNNER_TEMP" > /tmp/rt_path
+      - name: attempt apple account creation in real Safari
         run: |
-          python3 apple_try.py 2>&1 | tee attempt.log || true
-      - name: messages-state
+          cd "$GITHUB_WORKSPACE"
+          python3 apple_wd.py 2>&1 | tail -200 || true
+      - name: messages state
         if: always()
         run: |
-          echo "== agents =="; pgrep -lf imagent || true
-          echo "== chatdb =="; sqlite3 "$HOME/Library/Messages/chat.db" ".tables" 2>&1 | head -5
-          echo "== chat count =="; sqlite3 "$HOME/Library/Messages/chat.db" "select count(*) from chat;" 2>&1
-          echo "== ichat prefs =="; defaults read com.apple.iChat 2>&1 | head -30
-          echo "== ids =="; /usr/libexec/PlistBuddy -c 'Print' ~/Library/Preferences/com.apple.ids.service.plist 2>&1 | head -20
-      - name: upload
+          defaults read com.apple.iChat 2>/dev/null | head -40 || echo no_ichat_prefs
+          ls -la ~/Library/Messages 2>/dev/null || echo no_messages_dir
+          sqlite3 ~/Library/Messages/chat.db "select count(*) from message" 2>/dev/null || echo no_chatdb
+          tail -40 "$RUNNER_TEMP/safaridriver.log" 2>/dev/null || true
+      - name: upload evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: apple-evidence
-          path: out
+          name: appleid-evidence
+          path: |
+            out
+            ${{ runner.temp }}/safaridriver.log
           if-no-files-found: warn
