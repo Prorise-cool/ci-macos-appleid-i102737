@@ -6,62 +6,44 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     env:
-      APPLE_PHONE: '2833523739'
+      APPLE_PHONE: '15874056545'
     steps:
       - uses: actions/checkout@v4
       - name: env probe
         run: |
           sw_vers; uname -m; sysctl -n hw.model || true
-          launchctl managername || true; whoami; id
-          ls -l /opt/homebrew/bin/python3* /usr/bin/python3 2>/dev/null || true
           python3 -V; safaridriver --version || true
-          ls /Applications | head -30
       - name: build Apple Vision OCR helper
         run: |
-          xcrun --find swiftc
           swiftc -O ocr.swift -o /tmp/ocr && ls -l /tmp/ocr
       - name: enable and start safaridriver (headful GUI session)
         run: |
           sudo -n safaridriver --enable || echo "ENABLE_FAILED"
           defaults write com.apple.Safari AllowJavaScriptFromAppleEvents -bool true || true
-          defaults write com.apple.Safari IncludeDevelopMenu -bool true || true
           nohup safaridriver --port 4444 > "$RUNNER_TEMP/safaridriver.log" 2>&1 &
           sleep 3
           curl -s -m 8 http://127.0.0.1:4444/status || echo "STATUS_FAILED"
-          echo "$RUNNER_TEMP" > /tmp/rt_path
-      - name: attempt apple account creation in real Safari
+      - name: apple signup + phone sms delivery judgment
         run: |
           cd "$GITHUB_WORKSPACE"; ls -la
-          python3 apple_wd4.py 2>&1 || true
-      - name: gui and messages automation probe
+          python3 apple_wd5.py 2>&1 || true
+      - name: post-run inbox + messages probe
         if: always()
         run: |
-          echo '--- System Events accessibility'
-          osascript -e 'tell application "System Events" to get name of first process' 2>&1 || true
-          osascript -e 'tell application "System Events" to keystroke "a"' 2>&1 || true
+          echo '--- receivesms inbox after run'
+          curl -s -m 25 -A 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15' -o out5/inbox_after.html -w '%{http_code}\n' "https://receivesms.co/ca-phone-number/23253/?t=$(date +%s)" || true
           echo '--- Messages scripting'
           open -a Messages 2>&1 || true
-          sleep 6
+          sleep 5
           osascript -e 'tell application "Messages" to get name of every account' 2>&1 || true
-          osascript -e 'tell application "Messages" to get name of every service' 2>&1 || true
           pgrep -lf imagent || true
-          echo '--- quackr inbox for our number'
-          curl -s -m 25 -A 'Mozilla/5.0' https://quackr.io/temporary-numbers/united-states | grep -o '2833523739' | head -3 || true
-          curl -s -m 25 -A 'Mozilla/5.0' -o /tmp/q1.html -w '%{http_code}\n' https://quackr.io/sms/2833523739 || true
-          head -c 300 /tmp/q1.html || true
-      - name: messages state
-        if: always()
-        run: |
-          defaults read com.apple.iChat 2>/dev/null | head -40 || echo no_ichat_prefs
-          ls -la ~/Library/Messages 2>/dev/null || echo no_messages_dir
           sqlite3 ~/Library/Messages/chat.db "select count(*) from message" 2>/dev/null || echo no_chatdb
-          tail -40 "$RUNNER_TEMP/safaridriver.log" 2>/dev/null || true
       - name: upload evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: appleid-evidence
+          name: appleid-evidence5
           path: |
-            out
+            out5
             ${{ runner.temp }}/safaridriver.log
           if-no-files-found: warn
