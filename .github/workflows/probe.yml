@@ -6,7 +6,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     env:
-      APPLE_PHONE: '+12835237397'
+      APPLE_PHONE: '2833523739'
     steps:
       - uses: actions/checkout@v4
       - name: env probe
