@@ -1,0 +1,25 @@
+name: macos-discover
+on:
+  workflow_dispatch:
+jobs:
+  disc:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: enable and start safaridriver (headful GUI session)
+        run: |
+          sudo -n safaridriver --enable || echo "ENABLE_FAILED"
+          nohup safaridriver --port 4444 > "$RUNNER_TEMP/safaridriver.log" 2>&1 &
+          sleep 3
+          curl -s -m 8 http://127.0.0.1:4444/status || echo "STATUS_FAILED"
+      - name: discover readable free-sms inboxes
+        run: |
+          cd "$GITHUB_WORKSPACE"; python3 discover.py 2>&1 || true
+      - name: upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: discover-evidence
+          path: out
+          if-no-files-found: warn
