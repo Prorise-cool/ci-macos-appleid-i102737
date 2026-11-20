@@ -118,7 +118,7 @@ def poll_inbox_apple(after_ts, secs=600):
 # ---------- email ----------
 def mailtm_new():
     last = ''
-    for i in range(5):
+    for i in range(2):
         if time_left() < 600: break
         try:
             st, j = http_json('https://api.mail.tm/domains', timeout=25)
@@ -230,23 +230,26 @@ def set_input(name, value):
     return ('ok' if v else 'no_value', name, v)
 
 def set_tid(tid, value):
-    # birthday selects carry data-testid, not a name attribute
-    ok = js("""var s=document.querySelector('[data-testid="%s"]'); if(!s) return 'nosel';
-      var has=Array.from(s.options).some(function(o){return o.value===arguments[0];}); if(!has) return 'noopt';
-      s.value=arguments[0]; s.dispatchEvent(new Event('input',{bubbles:true}));
+    # birthday selects carry data-testid, not a name attribute (note: use var v, regular
+    # functions have their own `arguments`, so compare against a captured value)
+    ok = js("""var v=arguments[0]; var s=document.querySelector('[data-testid="%s"]'); if(!s) return 'nosel';
+      var has=Array.from(s.options).some(function(o){return o.value===v;}); if(!has) return 'noopt';
+      s.value=v; s.dispatchEvent(new Event('input',{bubbles:true}));
       s.dispatchEvent(new Event('change',{bubbles:true}));
       var lab=s.parentNode.querySelector('.form-dropdown-label'); if(lab){var o=s.options[s.selectedIndex]; if(o) lab.textContent=o.text;} return s.value;""" % tid, [value])
     return ('ok' if ok == value else 'bad', tid, str(ok))
 
 def set_select(name, value):
-    # try by option value, then by text (country name / +44), then log options
-    ok = js("""var s=document.querySelector('select[name="%s"]'); if(!s) return 'nosel';
-      var has=Array.from(s.options).some(function(o){return o.value===arguments[0];});
+    ok = js("""var v=arguments[0]; var s=document.querySelector('select[name="%s"]'); if(!s) return 'nosel';
+      var has=Array.from(s.options).some(function(o){return o.value===v;});
       if(!has) return 'noopt';
-      s.value=arguments[0]; s.dispatchEvent(new Event('input',{bubbles:true}));
+      s.value=v; s.dispatchEvent(new Event('input',{bubbles:true}));
       s.dispatchEvent(new Event('change',{bubbles:true})); return s.value;""" % name, [value])
     if ok == value: return ('ok', name, value)
     return ('bad', name, str(ok))
+
+def invalid_fields():
+    return js("""return Array.from(document.querySelectorAll('[aria-invalid="true"]')).map(function(e){return (e.getAttribute('data-testid')||'')+'#'+(e.id||'');}).slice(0,10);""")
 
 def select_info(name):
     return js("""var s=document.querySelector('select[name="%s"]'); if(!s) return null;
@@ -326,6 +329,7 @@ def main():
     ev('country_set', set_select('countrySelect', {'GB': 'GBR', 'CA': 'CAN', 'US': 'USA'}.get(NUM_CC, '')))
     ev('phone_fill', set_input('phoneNumber', NUM_NAT))
     ev('phone_validity', js("var e=document.querySelector('input[name=phoneNumber]'); return e?{v:e.value,ok:e.checkValidity(),msg:e.validationMessage}:null;"))
+    ev('invalid_after_fill', invalid_fields())
     dump('13_filled')
 
     ok_submit = False
@@ -360,7 +364,7 @@ def main():
             ok_submit = True; ev('submit_ok', attempt); break
         if 'verification code' in low:
             ok_submit = True; ev('submit_ok_text', attempt); break
-        ev('submit_blocked', {'attempt': attempt, 'txt': t[:400]})
+        ev('submit_blocked', {'attempt': attempt, 'txt': t[:200], 'invalid': invalid_fields()})
         if new_code(): time.sleep(4)
     ev('captcha_images_used', images)
     if not ok_submit: STATE['stage'] = 'no_email_stage'; save(); return
