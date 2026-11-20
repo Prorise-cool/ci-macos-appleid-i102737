@@ -1,0 +1,56 @@
+name: macos-appleid7
+on:
+  workflow_dispatch:
+jobs:
+  safari7:
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      APPLE_CC: 'GB'
+      APPLE_NAT: '7450699185'
+      APPLE_INBOX: 'https://asms.ai/number/447450699185'
+    steps:
+      - uses: actions/checkout@v4
+      - name: env probe
+        run: |
+          sw_vers; uname -m; sysctl -n hw.model || true
+          python3 -V; safaridriver --version || true
+      - name: build Apple Vision OCR helper v2
+        run: |
+          swiftc -O ocr2.swift -o /tmp/ocr2 && ls -l /tmp/ocr2
+      - name: enable and start safaridriver (headful GUI session)
+        run: |
+          sudo -n safaridriver --enable || echo "ENABLE_FAILED"
+          defaults write com.apple.Safari AllowJavaScriptFromAppleEvents -bool true || true
+          nohup safaridriver --port 4444 > "$RUNNER_TEMP/safaridriver.log" 2>&1 &
+          sleep 3
+          curl -s -m 8 http://127.0.0.1:4444/status || echo "STATUS_FAILED"
+      - name: apple signup + phone sms delivery judgment (asms GB number)
+        run: |
+          cd "$GITHUB_WORKSPACE"; ls -la
+          python3 apple_wd7.py 2>&1 || true
+      - name: redact credentials before upload
+        if: always()
+        run: |
+          python3 redact7.py 2>&1 || true
+          echo '--- summary7 stage line'
+          grep -a 'FINAL STAGE' out7/run7.log 2>/dev/null || true
+          python3 -c "import json;d=json.load(open('out7/summary7.json'));print('STAGE=',d.get('stage'));print('EVENTS=',len(d.get('events',[])))" 2>/dev/null || true
+      - name: post-run inbox + messages probe
+        if: always()
+        run: |
+          echo '--- Messages scripting'
+          open -a Messages 2>&1 || true
+          sleep 5
+          osascript -e 'tell application "Messages" to get name of every account' 2>&1 || true
+          pgrep -lf imagent || true
+          sqlite3 ~/Library/Messages/chat.db "select count(*) from message" 2>/dev/null || echo no_chatdb
+      - name: upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appleid-evidence7
+          path: |
+            out7
+            ${{ runner.temp }}/safaridriver.log
+          if-no-files-found: warn
