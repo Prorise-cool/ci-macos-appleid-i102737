@@ -1,0 +1,46 @@
+name: macos-appleid-safari
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+jobs:
+  safari:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: env probe
+        run: |
+          sw_vers; uname -m; sysctl -n hw.model || true
+          launchctl managername || true; whoami; id
+          ls -l /opt/homebrew/bin/python3* /usr/bin/python3 2>/dev/null || true
+          python3 -V; safaridriver --version || true
+          ls /Applications | head -30
+      - name: enable and start safaridriver (headful GUI session)
+        run: |
+          sudo -n safaridriver --enable || echo "ENABLE_FAILED"
+          defaults write com.apple.Safari AllowJavaScriptFromAppleEvents -bool true || true
+          defaults write com.apple.Safari IncludeDevelopMenu -bool true || true
+          nohup safaridriver --port 4444 > "$RUNNER_TEMP/safaridriver.log" 2>&1 &
+          sleep 3
+          curl -s -m 8 http://127.0.0.1:4444/status || echo "STATUS_FAILED"
+          echo "$RUNNER_TEMP" > /tmp/rt_path
+      - name: attempt apple account creation in real Safari
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          python3 apple_wd.py 2>&1 | tail -200 || true
+      - name: messages state
+        if: always()
+        run: |
+          defaults read com.apple.iChat 2>/dev/null | head -40 || echo no_ichat_prefs
+          ls -la ~/Library/Messages 2>/dev/null || echo no_messages_dir
+          sqlite3 ~/Library/Messages/chat.db "select count(*) from message" 2>/dev/null || echo no_chatdb
+          tail -40 "$RUNNER_TEMP/safaridriver.log" 2>/dev/null || true
+      - name: upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appleid-evidence
+          path: |
+            out
+            ${{ runner.temp }}/safaridriver.log
+          if-no-files-found: warn
