@@ -90,28 +90,72 @@ def poll_inbox_apple(after_ts, secs=780):
     return None
 
 def mailtm_new():
-    st, b = http('https://api.mail.tm/domains'); domain = json.loads(b)['hydra:member'][0]['domain']
-    pw = 'Aa1!' + ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(14))
-    addr = 'x%s%d@%s' % (int(time.time()) % 100000, random.randint(10, 99), domain)
-    http('https://api.mail.tm/accounts', json.dumps({'address': addr, 'password': pw}).encode(), {'Content-Type': 'application/json'})
-    st2, b2 = http('https://api.mail.tm/token', json.dumps({'address': addr, 'password': pw}).encode(), {'Content-Type': 'application/json'})
-    STATE['email'] = {'addr': addr, 'pw': pw, 'token': json.loads(b2).get('token')}
-    ev('mailtm', {'addr': addr, 'token': bool(STATE['email']['token'])})
+    last = ''
+    for i in range(4):
+        try:
+            st, b = http('https://api.mail.tm/domains')
+            domain = json.loads(b)['hydra:member'][0]['domain']
+            pw = 'Aa1!' + ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(14))
+            addr = 'x%s%d@%s' % (int(time.time()) % 100000, random.randint(10, 99), domain)
+            http('https://api.mail.tm/accounts', json.dumps({'address': addr, 'password': pw}).encode(), {'Content-Type': 'application/json'})
+            st2, b2 = http('https://api.mail.tm/token', json.dumps({'address': addr, 'password': pw}).encode(), {'Content-Type': 'application/json'})
+            tok = json.loads(b2).get('token')
+            if tok:
+                STATE['email'] = {'kind': 'mailtm', 'addr': addr, 'pw': pw, 'token': tok}
+                ev('mailtm', {'addr': addr, 'token': True, 'try': i + 1}); return True
+            last = 'no_token'
+        except Exception as ex:
+            last = repr(ex)[:200]; ev('mailtm_err', {'try': i + 1, 'e': last})
+        time.sleep(5)
+    ev('mailtm_fail', last)
+    return guerrilla_new()
+
+def guerrilla_new():
+    try:
+        st, b = http('https://api.guerrillamail.com/ajax.php?f=get_email_address&lang=en')
+        j = json.loads(b)
+        STATE['email'] = {'kind': 'guerrilla', 'addr': j['email_addr'], 'sid': j['sid_token']}
+        ev('guerrilla', {'addr': j['email_addr']}); return True
+    except Exception as ex:
+        ev('guerrilla_fail', repr(ex)[:200]); STATE['email'] = None; return False
+
+def mail_codes_now():
+    e = STATE.get('email') or {}
+    if not e: return []
+    if e.get('kind') == 'mailtm':
+        st, b = http('https://api.mail.tm/messages', headers={'Authorization': 'Bearer ' + e['token']})
+        msgs = json.loads(b).get('hydra:member', [])
+        if not msgs: return []
+        st2, b2 = http('https://api.mail.tm/messages/' + msgs[0]['id'], headers={'Authorization': 'Bearer ' + e['token']})
+        j = json.loads(b2)
+        txt = (j.get('text') or '') + ' ' + json.dumps(j.get('html') or [], ensure_ascii=False)[:8000]
+        open(os.path.join(OUT, 'email_full.json'), 'w').write(json.dumps(j, ensure_ascii=False)[:20000])
+        codes = re.findall(r'(?<!\d)(\d{6})(?!\d)', txt)
+        if codes: ev('mail_code', {'subject': j.get('subject'), 'codes': codes[:5]})
+        return codes
+    # guerrilla
+    st, b = http('https://api.guerrillamail.com/ajax.php?f=check_email&seq=0&sid_token=' + e['sid'])
+    j = json.loads(b); lst = j.get('list') or []
+    if not lst: return []
+    mid = lst[0].get('mail_id')
+    st2, b2 = http('https://api.guerrillamail.com/ajax.php?f=fetch_email&email_id=%s&sid_token=%s' % (mid, e['sid']))
+    k = json.loads(b2)
+    txt = (k.get('mail_body') or '')
+    open(os.path.join(OUT, 'email_full.json'), 'w').write(json.dumps(k, ensure_ascii=False)[:20000])
+    codes = re.findall(r'(?<!\d)(\d{6})(?!\d)', txt)
+    if codes: ev('mail_code', {'subject': k.get('mail_subject'), 'codes': codes[:5]})
+    return codes
 
 def mail_wait_code(secs=200):
-    e = STATE['email']; end = time.time() + secs
+    end = time.time() + secs; n = 0
     while time.time() < end:
+        n += 1
         try:
-            st, b = http('https://api.mail.tm/messages', headers={'Authorization': 'Bearer ' + e['token']})
-            msgs = json.loads(b).get('hydra:member', [])
-            if msgs:
-                st2, b2 = http('https://api.mail.tm/messages/' + msgs[0]['id'], headers={'Authorization': 'Bearer ' + e['token']})
-                j = json.loads(b2); txt = (j.get('text') or '') + ' ' + json.dumps(j.get('html') or [], ensure_ascii=False)[:5000]
-                open(os.path.join(OUT, 'email_full.json'), 'w').write(json.dumps(j, ensure_ascii=False)[:20000])
-                codes = re.findall(r'(?<!\d)(\d{6})(?!\d)', txt)
-                ev('mail_code', {'subject': j.get('subject'), 'codes': codes[:5]})
-                if codes: return codes[0]
-        except Exception as ex: ev('mail_err', repr(ex)[:150])
+            c = mail_codes_now()
+            if n % 4 == 1: ev('mail_poll', {'n': n, 'codes': c[:3]})
+            if c: return c[0]
+        except Exception as ex:
+            ev('mail_err', repr(ex)[:150])
         time.sleep(8)
     return None
 
@@ -207,7 +251,8 @@ def main():
                               'first': [{'from': r['from'], 't': r['t'], 'text': r['text'][:120]} for r in rows[:4]]})
     except Exception as ex:
         ev('inbox_baseline_err', repr(ex)[:300]); INBOX_BASE = ''
-    mailtm_new()
+    if not mailtm_new():
+        STATE['stage'] = 'no_email_provider'; save(); return
     r = wd('POST', '/session', {'capabilities': {'alwaysMatch': {'browserName': 'safari'}}})
     SID = (r.get('value', {}) or {}).get('sessionId'); ev('wd_session', SID)
     if not SID: STATE['stage'] = 'no_session'; save(); return
