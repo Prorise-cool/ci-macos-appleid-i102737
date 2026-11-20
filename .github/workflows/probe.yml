@@ -32,7 +32,7 @@ jobs:
       - name: attempt apple account creation in real Safari
         run: |
           cd "$GITHUB_WORKSPACE"; ls -la
-          python3 apple_wd2.py 2>&1 || true
+          python3 apple_wd3.py 2>&1 || true
       - name: messages state
         if: always()
         run: |
